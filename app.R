@@ -113,7 +113,7 @@ ui <- fluidPage(
 # Server ----
 server <- function(input, output, session) {
   input <<- input
-  rvals <<- reactiveValues(analysis = prior)
+  rvals <<- reactiveValues(analysis = prior,ignore = c())
 
 
   # table output ----
@@ -158,6 +158,8 @@ server <- function(input, output, session) {
         filter(!is.na(value)) %>%
         pull(value)
       },error = function(e)return(""))
+    } else if(type == "group"){
+      qs = c("Yes","No")
     }
     if(type == "text"){
       r = shiny::textInput('value','value')
@@ -173,10 +175,28 @@ server <- function(input, output, session) {
         r = shinyjs::disabled(shiny::selectInput('value','value',qs,multiple = F, selected = qs))
     } else if(type == "lookup"){
       r = shiny::selectInput('value','value',qs,multiple = selectMultiple)
+    } else if(type == "function"){
+      rvals$eval = T
+      r = shiny::textInput('value','value')
+    } else if(type == "group"){
+      r = shiny::selectInput('value',paste("include",input$variable,"variables?"), choices = qs, selected = "yes")
     } else {
       r = shiny::textInput('value','value',placeholder = "error determining type")
     }
     r
+  })
+
+  # function update ----
+  observeEvent(rvals$eval,{
+    req(rvals$eval)
+    if(rvals$eval){
+      f = inputOptions %>%
+        filter(key == input$variable) %>%
+        pull(`function`)
+      val = tryCatch(eval(parse(text = f)),error = function(e)return(""))
+      updateTextInput(session = session, inputId = "value",value = val)
+      rvals$eval = F
+    }
   })
 
   # disable ----
@@ -194,35 +214,43 @@ server <- function(input, output, session) {
   # buttons ----
   observeEvent(input$add,{
     req(input$variable)
-    if(input$check == T){
-      value = paste0(input$value,'?')
-      # reset checkbox
-      updateCheckboxInput(session = session,
-                          inputId = 'check',
-                          label =  'Check if observation is uncertain',
-                          value = F)
-    } else value = input$value
-    value = paste(value, collapse = "; ")
-    if(rvals$type == "autoID") value = input$ID
+    if(rvals$type != "group"){
+      if(input$check == T){
+        value = paste0(input$value,'?')
+        # reset checkbox
+        updateCheckboxInput(session = session,
+                            inputId = 'check',
+                            label =  'Check if observation is uncertain',
+                            value = F)
+      } else value = input$value
+      value = paste(value, collapse = "; ")
+      if(rvals$type == "autoID") value = input$ID
 
-    new = tibble(
-      ID = input$ID,
-      variable = input$variable,
-      value = value
-    )
-    # print(new)
-    new = bind_rows(new,rvals$analysis) %>% distinct_all() %>%
-      distinct(ID,variable,.keep_all = T)
-    rvals$analysis = new
-    prntTbl()
+      new = tibble(
+        ID = input$ID,
+        variable = input$variable,
+        value = value
+      )
+      # print(new)
+      new = bind_rows(new,rvals$analysis) %>% distinct_all() %>%
+        distinct(ID,variable,.keep_all = T)
+      rvals$analysis = new
+      prntTbl()
 
-    # save results
-    rvals$analysis %>% saveRDS(here("tmp/current.Rds"))
-
+      # save results
+      rvals$analysis %>% saveRDS(here("tmp/current.Rds"))
+    }
     # reset select input
     nextKey = tryCatch({
       indx = which(inputOptions$key == input$variable)
-      inputOptions$key[indx + 1]
+      if(inputOptions$type[indx] == "group" && input$value == "No"){
+        rvals$ignore = c(rvals$ignore,which(inputOptions$parent == inputOptions$key[indx]))
+      }
+      indx = indx + 1
+      while(indx %in% rvals$ignore){
+        indx = indx + 1
+      }
+      inputOptions$key[indx]
     },error = function(e)return(""))
     updateSelectizeInput(session = session,
                          inputId =  "variable",
@@ -261,7 +289,7 @@ server <- function(input, output, session) {
   observeEvent(input$cancel,removeModal())
   observeEvent(input$deleteAllMod,{
     print('working?')
-    analysis <<- reactiveVal(tibble())
+    rvals$analysis = tibble()
     prntTbl()
     # save results
     rvals$analysis %>% saveRDS(here("tmp/current.Rds"))
