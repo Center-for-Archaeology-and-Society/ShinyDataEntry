@@ -103,7 +103,7 @@ ui <- fluidPage(
     mainPanel(
       actionButton('deleteAll','delete all'),
       actionButton('deleteRow','delete row'),
-      actionButton('save','save'),
+      downloadButton('download','download'),
       DT::DTOutput('table1')
     )
   )
@@ -295,25 +295,22 @@ server <- function(input, output, session) {
     rvals$analysis %>% saveRDS(here("tmp/current.Rds"))
   })
 
-  # save ----
-  observeEvent(input$save,{
-    print("saving")
-    fn = here(glue::glue(
-      "output-{as.Date(Sys.time())}.xlsx"
-    ))
-    i = 0
-    while(isTRUE(file.exists(fn))){
-      i = i + 1
-      fn %<>%
-        gsub("v\\d+.xlsx|.xlsx",paste0("v",i,".xlsx"),.)
-      if(i > 99) stop("limited to 99 files in one day. Why so many files?")
+  # download ----
+
+
+  output$download = downloadHandler(
+    filename = function() {
+      glue::glue(
+        "output-{as.Date(Sys.time())}.xlsx"
+      )
+    },
+    content = function(file) {
+      rio::export(rvals$analysis %>%
+                    mutate(variable = factor(variable, levels = inputOptions$key)) %>%
+                    arrange(variable) %>%
+                    pivot_wider(names_from = variable,values_from = value),file)
     }
-    rio::export(rvals$analysis %>%
-                  mutate(variable = factor(variable, levels = inputOptions$key)) %>%
-                  arrange(variable) %>%
-                  pivot_wider(names_from = variable,values_from = value),fn)
-    browseURL(fn)
-  })
+  )
 }
 
 
