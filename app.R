@@ -333,10 +333,16 @@ server <- function(input, output, session) {
       )
     },
     content = function(file) {
-      rio::export(rvals$analysis %>%
+      rio::export({
+        exclude = inputOptions %>%
+          filter(include == F) %>%
+          pull(key)
+        rvals$analysis %>%
+                    filter(!variable %in% exclude) %>%
                     mutate(variable = factor(variable, levels = inputOptions$key)) %>%
                     arrange(variable) %>%
-                    pivot_wider(names_from = variable,values_from = value),file)
+                    pivot_wider(names_from = variable,values_from = value)
+        },file)
     }
   )
 }
