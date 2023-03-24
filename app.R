@@ -10,6 +10,8 @@ library(magrittr)
 library(DT)
 library(rio)
 library(here)
+library(janitor)
+library(shinyauthr)
 
 i_am("app.R")
 
@@ -31,6 +33,22 @@ splitVals = function(x,sep){
   return(r)
 }
 
+exportAnalysis = function(analysis,inputOptions){
+  exclude = inputOptions %>%
+    dplyr::filter(include == F) %>%
+    dplyr::pull(key)
+  vars = inputOptions %>%
+    dplyr::filter(!key %in% exclude) %>%
+    dplyr::select(inputName,variable = key)
+  analysis %<>%
+    dplyr::right_join(vars, by = "variable") %>%
+    select(-variable) %>%
+    tidyr::pivot_wider(names_from = inputName,values_from = value) %>%
+    select(vars$inputName) %>%
+    janitor::remove_empty("rows")
+  return(analysis)
+}
+
 options = import(here("InputOptions.xlsx"),
                  setclass = 'tibble',range = "A1:A1000")
 
@@ -39,11 +57,6 @@ indx = which(options$Settings == "Input")
 settings = import(here("InputOptions.xlsx"),
                   setclass = 'tibble',range = glue::glue("A2:B{indx - 1}")) %>%
   filter(!is.na(field))
-
-selectMultiple = settings %>%
-  filter(field == 'multiple') %>%
-  pull(parameter) %>%
-  as.logical()
 
 inputOptions = import(here("InputOptions.xlsx"),
                       setclass = 'tibble',skip = indx + 1)
@@ -135,9 +148,13 @@ server <- function(input, output, session) {
   # Define ui inputs ----
   output$valueUI = renderUI({
     req(input$variable)
-    type = inputOptions %>%
-      dplyr::filter(key == input$variable) %>%
+    row = inputOptions %>%
+      dplyr::filter(key == input$variable)
+    type = row %>%
       dplyr::pull(type)
+    selectMultiple = row %>%
+      dplyr::pull(multiple)
+    if(!isTRUE(selectMultiple)) selectMultiple = F
     rvals$type = type
     if(type == 'list'){
       qs =
@@ -168,7 +185,7 @@ server <- function(input, output, session) {
     } else if(type == "list"){
       r = shiny::selectizeInput('value','value',qs, multiple = selectMultiple)
     } else if(type == "autoID"){
-      r = shinyjs::disabled(shiny::textInput('value','value',placeholder = input$ID))
+      r = shiny::textInput('value','value',placeholder = input$ID)
       updateTextInput(session = session,inputId = 'value', value = input$ID)
     } else if(type == "autolookup"){
       rvals$lookup =
@@ -334,14 +351,7 @@ server <- function(input, output, session) {
     },
     content = function(file) {
       rio::export({
-        exclude = inputOptions %>%
-          filter(include == F) %>%
-          pull(key)
-        rvals$analysis %>%
-                    filter(!variable %in% exclude) %>%
-                    mutate(variable = factor(variable, levels = inputOptions$key)) %>%
-                    arrange(variable) %>%
-                    pivot_wider(names_from = variable,values_from = value)
+        exportAnalysis(analysis,inputOptions)
         },file)
     }
   )
