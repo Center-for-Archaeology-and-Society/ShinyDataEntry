@@ -351,7 +351,7 @@ server <- function(input, output, session) {
     },
     content = function(file) {
       rio::export({
-        exportAnalysis(analysis,inputOptions)
+        exportAnalysis(rvals$analysis,inputOptions)
         },file)
     }
   )
