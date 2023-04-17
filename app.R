@@ -125,8 +125,8 @@ ui <- fluidPage(
 
 # Server ----
 server <- function(input, output, session) {
-  input <<- input
-  rvals <<- reactiveValues(analysis = prior,ignore = c())
+  input <- input
+  rvals <- reactiveValues(analysis = prior,ignore = c())
 
 
   # table output ----
@@ -141,7 +141,7 @@ server <- function(input, output, session) {
 
   observeEvent(input$table1_cell_edit, {
     info = input$table1_cell_edit
-    rvals$analysis <<- editData(rvals$analysis, info,rownames = F)
+    rvals$analysis <- editData(rvals$analysis, info,rownames = F)
     replaceData(proxyDT, rvals$analysis, resetPaging = FALSE)
   })
 
@@ -333,7 +333,7 @@ server <- function(input, output, session) {
     new = rvals$analysis %>%
       slice(-indx)
 
-    analysis <<- reactiveVal(new)
+    analysis <- reactiveVal(new)
     prntTbl()
 
     # save results
