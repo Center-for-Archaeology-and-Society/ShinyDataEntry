@@ -333,7 +333,7 @@ server <- function(input, output, session) {
     new = rvals$analysis %>%
       slice(-indx)
 
-    analysis <- reactiveVal(new)
+    rvals$analysis <- new
     prntTbl()
 
     # save results
