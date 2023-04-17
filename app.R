@@ -12,6 +12,7 @@ library(rio)
 library(here)
 library(janitor)
 library(shinyauthr)
+library(shinythemes)
 
 i_am("app.R")
 
@@ -77,8 +78,15 @@ Shiny.addCustomMessageHandler("refocus",
                                   function(NULL) {
                                     document.getElementById("variable").focus();});'
 
+# change folder permissions on server
+if (Sys.info()["sysname"] == "Linux") {
+  system("sudo chmod a+rw tmp")
+}
+
 
 # load from tmp
+if(!dir.exists(here("tmp"))) dir.create(here("tmp"))
+
 fntmp = here("tmp/current.Rds")
 if(file.exists(fntmp)){
   prior = readRDS(fntmp)
@@ -87,46 +95,81 @@ if(file.exists(fntmp)){
 }
 
 # ui ----
-ui <- fluidPage(
+ui <- navbarPage(
 
   # Application title
-  titlePanel(tryCatch(settings %>% filter(field == 'name') %>% pull(parameter),error = function(e)return("Data Entry"))),
+  title =  tryCatch(settings %>% filter(field == 'name') %>% pull(parameter),error = function(e)return("Data Entry")),
+
+
+  theme = shinytheme("flatly"),
 
   # javascript
   tags$head(tags$script(HTML(jscode))),
   shinyjs::useShinyjs(),
-
-
-  sidebarLayout(
-    sidebarPanel(
-      h2("Add data"),
-      textInput('ID','ID',
-                placeholder = "catalog-number"),
-      selectizeInput("variable","variable",
-                     inputOptions$key %>%
-                       setNames(inputOptions$inputName)),
-      uiOutput('valueUI'),
-      checkboxInput('check','Check if observation is uncertain'),
-      fixedRow(column(2,tagAppendAttributes(
-        actionButton('add','Add'),
-        `data-proxy-click` = "add"
-      )),column(1),column(2,actionButton('skip','skip'))
+  tabPanel(
+    "login",
+    # add logout button UI
+    div(class = "pull-right", shinyauthr::logoutUI(id = "logout")),
+    # add login panel UI function
+    shinyauthr::loginUI(id = "login"),
+    uiOutput("welcomeUI")
+  ),
+  tabPanel(
+    "Data entry",
+    sidebarLayout(
+      sidebarPanel(
+        h2("Add data"),
+        textInput('ID','ID',
+                  placeholder = "catalog-number"),
+        selectizeInput("variable","variable",
+                       inputOptions$key %>%
+                         setNames(inputOptions$inputName)),
+        uiOutput('valueUI'),
+        checkboxInput('check','Check if observation is uncertain'),
+        fixedRow(column(2,tagAppendAttributes(
+          actionButton('add','Add'),
+          `data-proxy-click` = "add"
+        )),column(1),column(2,actionButton('skip','skip'))
+        )
+      ),
+      mainPanel(
+        actionButton('deleteAll','delete all'),
+        actionButton('deleteRow','delete row'),
+        downloadButton('download','download'),
+        DT::DTOutput('table1')
       )
-    ),
-    mainPanel(
-      actionButton('deleteAll','delete all'),
-      actionButton('deleteRow','delete row'),
-      downloadButton('download','download'),
-      DT::DTOutput('table1')
     )
   )
-
 )
 
 # Server ----
 server <- function(input, output, session) {
 
-    rvals <- reactiveValues(analysis = prior,ignore = c())
+  database = readRDS("database.Rds")
+
+  # call login module supplying data frame,
+  # user and password cols and reactive trigger
+  credentials <<- shinyauthr::loginServer(
+    id = "login",
+    data = database,
+    user_col = user,
+    pwd_col = password,
+    sodium_hashed = T,
+    log_out = reactive(logout_init())
+  )
+
+  # call the logout module with reactive trigger to hide/show
+  logout_init <- shinyauthr::logoutServer(
+    id = "logout",
+    active = reactive(credentials()$user_auth)
+  )
+
+  output$welcomeUI = renderUI({
+    req(credentials()$user_auth)
+    renderText(paste("Welcome",credentials()$info$name))
+    })
+
+  rvals <- reactiveValues(analysis = prior,ignore = c())
 
 
   # table output ----
@@ -352,7 +395,7 @@ server <- function(input, output, session) {
     content = function(file) {
       rio::export({
         exportAnalysis(rvals$analysis,inputOptions)
-        },file)
+      },file)
     }
   )
 }
