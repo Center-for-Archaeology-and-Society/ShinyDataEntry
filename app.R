@@ -125,8 +125,8 @@ ui <- fluidPage(
 
 # Server ----
 server <- function(input, output, session) {
-  input <- input
-  rvals <- reactiveValues(analysis = prior,ignore = c())
+
+    rvals <- reactiveValues(analysis = prior,ignore = c())
 
 
   # table output ----
