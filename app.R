@@ -20,13 +20,24 @@ i_am("app.R")
 # functions
 
 safeSaveRDS = function(object,file){
-  if(file.access(file) == 0){
+  if(file.access(file, mode = 2) == 0){
   try(saveRDS(object,file))
   } else {
     if (Sys.info()["sysname"] == "Linux") {
       system(glue::glue("sudo chown shiny file"))
     }
     try(saveRDS(object,file))
+  }
+}
+
+safeReadRDS = function(object,file){
+  if(file.access(file, mode = 4) == 0){
+    try(readRDS(file))
+  } else {
+    if (Sys.info()["sysname"] == "Linux") {
+      system(glue::glue("sudo chown shiny file"))
+    }
+    try(readRDS(file))
   }
 }
 
@@ -91,11 +102,6 @@ Shiny.addCustomMessageHandler("refocus",
                                   function(NULL) {
                                     document.getElementById("variable").focus();});'
 
-# change folder permissions on server
-if (Sys.info()["sysname"] == "Linux") {
-  system("sudo chown shiny -R tmp")
-}
-
 # ui ----
 ui <- navbarPage(
     id = "main",
@@ -152,7 +158,7 @@ ui <- navbarPage(
 # Server ----
 server <- function(input, output, session) {
 
-  database = reactiveVal(readRDS("database.Rds"))
+  database = reactiveVal(safeSaveRDS("database.Rds"))
 
   observeEvent(credentials()$user_auth,{
     shinyjs::toggle("create_user",condition = isFALSE(credentials()$user_auth))
@@ -214,7 +220,7 @@ server <- function(input, output, session) {
   # user and password cols and reactive trigger
   credentials <- shinyauthr::loginServer(
     id = "login",
-    data = database(),
+    data = database,
     user_col = user,
     pwd_col = password,
     sodium_hashed = T,
@@ -255,7 +261,7 @@ server <- function(input, output, session) {
     fntmp = rvals$filepath
     if(file.exists(fntmp)){
       print("prior values exist")
-      rvals$analysis = readRDS(fntmp)
+      rvals$analysis = safeSaveRDS(fntmp)
     } else {
       print("prior values do not exist")
       rvals$analysis = tibble()
@@ -458,7 +464,7 @@ server <- function(input, output, session) {
       slice(indx)
     fntmp = here(rvals$dirpath,"deleted.Rds")
     if(file.exists(fntmp)){
-      old = readRDS(fntmp)
+      old = safeSaveRDS(fntmp)
     } else {
       old = tibble()
     }
