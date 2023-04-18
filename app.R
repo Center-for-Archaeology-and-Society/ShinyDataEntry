@@ -256,7 +256,12 @@ server <- function(input, output, session) {
     print("loading prior values")
     if(!dir.exists(here("tmp"))) dir.create(here("tmp"))
     rvals$dirpath = here(paste0("tmp/",credentials()$info$user))
-    if(!dir.exists(rvals$dirpath)) dir.create(rvals$dirpath)
+    if (Sys.info()["sysname"] == "Linux") {
+      system(glue::glue("sudo mkdir {rvals$dirpath}"))
+      system(glue::glue("sudo chown shiny {rvals$dirpath}"))
+    } else {
+      if(!dir.exists(rvals$dirpath)) dir.create(rvals$dirpath)
+    }
     rvals$filepath = file.path(rvals$dirpath,"current.Rds")
 
     fntmp = rvals$filepath
@@ -264,7 +269,7 @@ server <- function(input, output, session) {
       print("prior values exist")
       rvals$analysis = safeReadRDS(fntmp)
     } else {
-      print("prior values do not exist")
+      warning("prior values do not exist")
       rvals$analysis = tibble()
     }
   })
