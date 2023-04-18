@@ -193,7 +193,7 @@ server <- function(input, output, session) {
     name <- input$new_name
 
     # Validate the passwords match
-    if(username %in% database()$user){
+    if(username %in% database$user){
       showNotification("Username already exists. Please try again.",
                        type = "error")
       return()
