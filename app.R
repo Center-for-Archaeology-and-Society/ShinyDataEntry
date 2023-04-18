@@ -103,6 +103,8 @@ Shiny.addCustomMessageHandler("refocus",
                                   function(NULL) {
                                     document.getElementById("variable").focus();});'
 
+database = safeReadRDS("database.Rds")
+
 # ui ----
 ui <- navbarPage(
   id = "main",
@@ -159,7 +161,7 @@ tabPanel(
 # Server ----
 server <- function(input, output, session) {
 
-  database = reactiveVal(safeReadRDS("database.Rds"))
+  # database = reactiveVal(safeReadRDS("database.Rds"))
 
   observeEvent(credentials()$user_auth,{
     shinyjs::toggle("create_user",condition = isFALSE(credentials()$user_auth))
@@ -221,7 +223,7 @@ server <- function(input, output, session) {
   # user and password cols and reactive trigger
   credentials <- shinyauthr::loginServer(
     id = "login",
-    data = database(),
+    data = database,
     user_col = user,
     pwd_col = password,
     sodium_hashed = T,
