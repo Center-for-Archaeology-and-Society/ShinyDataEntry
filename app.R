@@ -1,6 +1,7 @@
 # Data entry application
 
 library(shiny)
+library(shinyjs)
 library(dplyr)
 library(purrr)
 library(tidyr)
@@ -83,19 +84,9 @@ if (Sys.info()["sysname"] == "Linux") {
   system("sudo chmod a+rw tmp")
 }
 
-
-# load from tmp
-if(!dir.exists(here("tmp"))) dir.create(here("tmp"))
-
-fntmp = here("tmp/current.Rds")
-if(file.exists(fntmp)){
-  prior = readRDS(fntmp)
-} else {
-  prior = tibble()
-}
-
 # ui ----
 ui <- navbarPage(
+    id = "main",
 
   # Application title
   title =  tryCatch(settings %>% filter(field == 'name') %>% pull(parameter),error = function(e)return("Data Entry")),
@@ -107,15 +98,19 @@ ui <- navbarPage(
   tags$head(tags$script(HTML(jscode))),
   shinyjs::useShinyjs(),
   tabPanel(
-    "login",
+    "home",
     # add logout button UI
     div(class = "pull-right", shinyauthr::logoutUI(id = "logout")),
+    div(HTML("<h3>Forgot password? Email <a href=\"mailto:rbischoff@asu.edu\">rbischoff@asu.edu</a></h3>
+"),id = "forgotPassword"),
+    actionButton("create_user", "Create user"),
     # add login panel UI function
     shinyauthr::loginUI(id = "login"),
     uiOutput("welcomeUI")
   ),
   tabPanel(
-    "Data entry",
+    title = "Data entry",
+    value = "dataEntry",
     sidebarLayout(
       sidebarPanel(
         h2("Add data"),
@@ -145,13 +140,69 @@ ui <- navbarPage(
 # Server ----
 server <- function(input, output, session) {
 
-  database = readRDS("database.Rds")
+  database = reactiveVal(readRDS("database.Rds"))
+
+  observeEvent(credentials()$user_auth,{
+    shinyjs::toggle("create_user",condition = isFALSE(credentials()$user_auth))
+    shinyjs::toggle("forgotPassword",condition = isFALSE(credentials()$user_auth))
+  })
+
+  observeEvent(input$create_user, {
+    showModal(modalDialog(
+      title = "New user information",
+      textInput("new_username", "Username:"),
+      textInput("new_name", "Name:"),
+      passwordInput("new_password1", "Password:"),
+      passwordInput("new_password2", "Confirm password:"),
+      footer = tagList(
+        modalButton("Cancel"),
+        actionButton("save_user", "Save",
+                     class = "btn-primary")
+      ),
+      easyClose = TRUE,
+      size = "m",
+      closeOnEscape = TRUE,
+      closeOnClickOutside = TRUE
+    ))
+  })
+
+  observeEvent(input$save_user, {
+    # Get the values of the input fields
+    username <- input$new_username
+    password1 <- input$new_password1
+    password2 <- input$new_password2
+    name <- input$new_name
+
+    # Validate the passwords match
+    if(username %in% database()$user){
+      showNotification("Username already exists. Please try again.",
+                       type = "error")
+      return()
+    }
+
+    if (password1 != password2) {
+      showNotification("Passwords don't match. Please try again.",
+                       type = "error")
+      return()
+    }
+
+    new = tibble(user = username, password = sodium::password_store(password1), permissions = "standard",name = name)
+
+    database = reactiveVal(bind_rows(database(),new))
+    saveRDS(database(),"database.Rds")
+
+    showNotification(sprintf("User '%s' was created successfully!\n", new$user))
+    removeModal()
+
+  })
+
+  # login ----
 
   # call login module supplying data frame,
   # user and password cols and reactive trigger
-  credentials <<- shinyauthr::loginServer(
+  credentials <- shinyauthr::loginServer(
     id = "login",
-    data = database,
+    data = database(),
     user_col = user,
     pwd_col = password,
     sodium_hashed = T,
@@ -167,10 +218,37 @@ server <- function(input, output, session) {
   output$welcomeUI = renderUI({
     req(credentials()$user_auth)
     renderText(paste("Welcome",credentials()$info$name))
-    })
+  })
 
-  rvals <- reactiveValues(analysis = prior,ignore = c())
+  observeEvent(credentials()$user_auth,{
+    if(credentials()$user_auth) {
+      showTab("main","dataEntry")
+    } else {
+      hideTab("main","dataEntry")
+    }
+  })
 
+  # reactive values ----
+  rvals <- reactiveValues(ignore = c())
+
+  # load from tmp
+  observeEvent(credentials()$user_auth,{
+    req(credentials()$user_auth)
+    print("loading prior values")
+    if(!dir.exists(here("tmp"))) dir.create(here("tmp"))
+    rvals$dirpath = here(paste0("tmp/",credentials()$info$user))
+    if(!dir.exists(rvals$dirpath)) dir.create(rvals$dirpath)
+    rvals$filepath = file.path(rvals$dirpath,"current.Rds")
+
+    fntmp = rvals$filepath
+    if(file.exists(fntmp)){
+      print("prior values exist")
+      rvals$analysis = readRDS(fntmp)
+    } else {
+      print("prior values do not exist")
+      rvals$analysis = tibble()
+    }
+  })
 
   # table output ----
   prntTbl = function(){
@@ -190,7 +268,9 @@ server <- function(input, output, session) {
 
   # Define ui inputs ----
   output$valueUI = renderUI({
+    req(credentials()$user_auth)
     req(input$variable)
+    print("defining UI")
     row = inputOptions %>%
       dplyr::filter(key == input$variable)
     type = row %>%
@@ -243,6 +323,7 @@ server <- function(input, output, session) {
     } else {
       r = shiny::textInput('value','value',placeholder = "error determining type")
     }
+    print("UI definition completed")
     r
   })
 
@@ -298,7 +379,7 @@ server <- function(input, output, session) {
       prntTbl()
 
       # save results
-      rvals$analysis %>% saveRDS(here("tmp/current.Rds"))
+      rvals$analysis %>% saveRDS(rvals$filepath)
     }
     # reset select input
     nextKey = tryCatch({
@@ -352,7 +433,7 @@ server <- function(input, output, session) {
     rvals$analysis = tibble()
     prntTbl()
     # save results
-    rvals$analysis %>% saveRDS(here("tmp/current.Rds"))
+    rvals$analysis %>% saveRDS(rvals$filepath)
     removeModal()
   })
 
@@ -363,7 +444,7 @@ server <- function(input, output, session) {
     # save deleted just in case
     removed = rvals$analysis %>%
       slice(indx)
-    fntmp = here("tmp/deleted.Rds")
+    fntmp = here(rvals$dirpath,"deleted.Rds")
     if(file.exists(fntmp)){
       old = readRDS(fntmp)
     } else {
@@ -380,7 +461,7 @@ server <- function(input, output, session) {
     prntTbl()
 
     # save results
-    rvals$analysis %>% saveRDS(here("tmp/current.Rds"))
+    rvals$analysis %>% saveRDS(rvals$filepath)
   })
 
   # download ----
