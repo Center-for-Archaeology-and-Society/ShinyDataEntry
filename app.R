@@ -18,6 +18,18 @@ library(shinythemes)
 i_am("app.R")
 
 # functions
+
+safeSaveRDS = function(object,file){
+  if(file.access(file) == 0){
+  try(saveRDS(object,file))
+  } else {
+    if (Sys.info()["sysname"] == "Linux") {
+      system(glue::glue("sudo chown shiny file"))
+    }
+    try(saveRDS(object,file))
+  }
+}
+
 isValid = function(x){
   if(try(isTRUE(is.null(x)),silent=T)) r = F else
     if(try(isTRUE(is.na(x)),silent=T)) r = F else
@@ -81,7 +93,7 @@ Shiny.addCustomMessageHandler("refocus",
 
 # change folder permissions on server
 if (Sys.info()["sysname"] == "Linux") {
-  system("sudo chmod a+rw tmp")
+  system("sudo chown shiny -R tmp")
 }
 
 # ui ----
@@ -189,7 +201,7 @@ server <- function(input, output, session) {
     new = tibble(user = username, password = sodium::password_store(password1), permissions = "standard",name = name)
 
     database = reactiveVal(bind_rows(database(),new))
-    saveRDS(database(),"database.Rds")
+    safeSaveRDS(database(),"database.Rds")
 
     showNotification(sprintf("User '%s' was created successfully!\n", new$user))
     removeModal()
@@ -379,7 +391,7 @@ server <- function(input, output, session) {
       prntTbl()
 
       # save results
-      rvals$analysis %>% saveRDS(rvals$filepath)
+      rvals$analysis %>% safeSaveRDS(rvals$filepath)
     }
     # reset select input
     nextKey = tryCatch({
@@ -433,7 +445,7 @@ server <- function(input, output, session) {
     rvals$analysis = tibble()
     prntTbl()
     # save results
-    rvals$analysis %>% saveRDS(rvals$filepath)
+    rvals$analysis %>% safeSaveRDS(rvals$filepath)
     removeModal()
   })
 
@@ -452,7 +464,7 @@ server <- function(input, output, session) {
     }
     removed = bind_rows(old, removed) %>%
       distinct_all()
-    saveRDS(removed,fntmp)
+    safeSaveRDS(removed,fntmp)
 
     new = rvals$analysis %>%
       slice(-indx)
@@ -461,7 +473,7 @@ server <- function(input, output, session) {
     prntTbl()
 
     # save results
-    rvals$analysis %>% saveRDS(rvals$filepath)
+    rvals$analysis %>% safeSaveRDS(rvals$filepath)
   })
 
   # download ----
