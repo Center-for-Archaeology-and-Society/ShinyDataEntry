@@ -24,7 +24,7 @@ safeSaveRDS = function(object,file){
     try(saveRDS(object,file))
   } else {
     if (Sys.info()["sysname"] == "Linux") {
-      system(glue::glue("sudo chown shiny file"))
+      system(glue::glue("sudo chown shiny {file}"))
     }
     try(saveRDS(object,file))
   }
@@ -35,7 +35,7 @@ safeReadRDS = function(file){
     object = tryCatch(readRDS(file),error =  function(e) return(NULL))
   } else {
     if (Sys.info()["sysname"] == "Linux") {
-      system(glue::glue("sudo chown shiny file"))
+      system(glue::glue("sudo chown shiny {file}"))
     }
     object = tryCatch(readRDS(file),error =  function(e) return(NULL))
   }
@@ -209,8 +209,8 @@ server <- function(input, output, session) {
 
     new = tibble(user = username, password = sodium::password_store(password1), permissions = "standard",name = name)
 
-    database = reactiveVal(bind_rows(database(),new))
-    safeSaveRDS(database(),"database.Rds")
+    database = bind_rows(database,new)
+    safeSaveRDS(database,"database.Rds")
 
     showNotification(sprintf("User '%s' was created successfully!\n", new$user))
     removeModal()
