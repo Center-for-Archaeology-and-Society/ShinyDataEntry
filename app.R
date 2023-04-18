@@ -21,7 +21,7 @@ i_am("app.R")
 
 safeSaveRDS = function(object,file){
   if(file.access(file, mode = 2) == 0){
-  try(saveRDS(object,file))
+    try(saveRDS(object,file))
   } else {
     if (Sys.info()["sysname"] == "Linux") {
       system(glue::glue("sudo chown shiny file"))
@@ -30,15 +30,16 @@ safeSaveRDS = function(object,file){
   }
 }
 
-safeReadRDS = function(object,file){
+safeReadRDS = function(file){
   if(file.access(file, mode = 4) == 0){
-    try(readRDS(file))
+    object = tryCatch(readRDS(file),error =  function(e) return(NULL))
   } else {
     if (Sys.info()["sysname"] == "Linux") {
       system(glue::glue("sudo chown shiny file"))
     }
-    try(readRDS(file))
+    object = tryCatch(readRDS(file),error =  function(e) return(NULL))
   }
+  return(object)
 }
 
 isValid = function(x){
@@ -104,7 +105,7 @@ Shiny.addCustomMessageHandler("refocus",
 
 # ui ----
 ui <- navbarPage(
-    id = "main",
+  id = "main",
 
   # Application title
   title =  tryCatch(settings %>% filter(field == 'name') %>% pull(parameter),error = function(e)return("Data Entry")),
@@ -121,44 +122,44 @@ ui <- navbarPage(
     div(class = "pull-right", shinyauthr::logoutUI(id = "logout")),
     div(HTML("<h3>Forgot password? Email <a href=\"mailto:rbischoff@asu.edu\">rbischoff@asu.edu</a></h3>
 "),id = "forgotPassword"),
-    actionButton("create_user", "Create user"),
-    # add login panel UI function
-    shinyauthr::loginUI(id = "login"),
-    uiOutput("welcomeUI")
+actionButton("create_user", "Create user"),
+# add login panel UI function
+shinyauthr::loginUI(id = "login"),
+uiOutput("welcomeUI")
   ),
-  tabPanel(
-    title = "Data entry",
-    value = "dataEntry",
-    sidebarLayout(
-      sidebarPanel(
-        h2("Add data"),
-        textInput('ID','ID',
-                  placeholder = "catalog-number"),
-        selectizeInput("variable","variable",
-                       inputOptions$key %>%
-                         setNames(inputOptions$inputName)),
-        uiOutput('valueUI'),
-        checkboxInput('check','Check if observation is uncertain'),
-        fixedRow(column(2,tagAppendAttributes(
-          actionButton('add','Add'),
-          `data-proxy-click` = "add"
-        )),column(1),column(2,actionButton('skip','skip'))
-        )
-      ),
-      mainPanel(
-        actionButton('deleteAll','delete all'),
-        actionButton('deleteRow','delete row'),
-        downloadButton('download','download'),
-        DT::DTOutput('table1')
+tabPanel(
+  title = "Data entry",
+  value = "dataEntry",
+  sidebarLayout(
+    sidebarPanel(
+      h2("Add data"),
+      textInput('ID','ID',
+                placeholder = "catalog-number"),
+      selectizeInput("variable","variable",
+                     inputOptions$key %>%
+                       setNames(inputOptions$inputName)),
+      uiOutput('valueUI'),
+      checkboxInput('check','Check if observation is uncertain'),
+      fixedRow(column(2,tagAppendAttributes(
+        actionButton('add','Add'),
+        `data-proxy-click` = "add"
+      )),column(1),column(2,actionButton('skip','skip'))
       )
+    ),
+    mainPanel(
+      actionButton('deleteAll','delete all'),
+      actionButton('deleteRow','delete row'),
+      downloadButton('download','download'),
+      DT::DTOutput('table1')
     )
   )
+)
 )
 
 # Server ----
 server <- function(input, output, session) {
 
-  database = reactiveVal(safeSaveRDS("database.Rds"))
+  database = reactiveVal(safeReadRDS("database.Rds"))
 
   observeEvent(credentials()$user_auth,{
     shinyjs::toggle("create_user",condition = isFALSE(credentials()$user_auth))
@@ -220,7 +221,7 @@ server <- function(input, output, session) {
   # user and password cols and reactive trigger
   credentials <- shinyauthr::loginServer(
     id = "login",
-    data = database,
+    data = database(),
     user_col = user,
     pwd_col = password,
     sodium_hashed = T,
@@ -261,7 +262,7 @@ server <- function(input, output, session) {
     fntmp = rvals$filepath
     if(file.exists(fntmp)){
       print("prior values exist")
-      rvals$analysis = safeSaveRDS(fntmp)
+      rvals$analysis = safeReadRds(fntmp)
     } else {
       print("prior values do not exist")
       rvals$analysis = tibble()
@@ -464,7 +465,7 @@ server <- function(input, output, session) {
       slice(indx)
     fntmp = here(rvals$dirpath,"deleted.Rds")
     if(file.exists(fntmp)){
-      old = safeSaveRDS(fntmp)
+      old = safeReadRds(fntmp)
     } else {
       old = tibble()
     }
