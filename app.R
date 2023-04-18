@@ -161,8 +161,6 @@ tabPanel(
 # Server ----
 server <- function(input, output, session) {
 
-  # database = reactiveVal(safeReadRDS("database.Rds"))
-
   observeEvent(credentials()$user_auth,{
     shinyjs::toggle("create_user",condition = isFALSE(credentials()$user_auth))
     shinyjs::toggle("forgotPassword",condition = isFALSE(credentials()$user_auth))
@@ -264,7 +262,7 @@ server <- function(input, output, session) {
     fntmp = rvals$filepath
     if(file.exists(fntmp)){
       print("prior values exist")
-      rvals$analysis = safeReadRds(fntmp)
+      rvals$analysis = safeReadRDS(fntmp)
     } else {
       print("prior values do not exist")
       rvals$analysis = tibble()
@@ -467,7 +465,7 @@ server <- function(input, output, session) {
       slice(indx)
     fntmp = here(rvals$dirpath,"deleted.Rds")
     if(file.exists(fntmp)){
-      old = safeReadRds(fntmp)
+      old = safeReadRDS(fntmp)
     } else {
       old = tibble()
     }
