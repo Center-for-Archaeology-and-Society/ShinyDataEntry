@@ -103,8 +103,6 @@ Shiny.addCustomMessageHandler("refocus",
                                   function(NULL) {
                                     document.getElementById("variable").focus();});'
 
-database = safeReadRDS("database.Rds")
-
 # ui ----
 ui <- navbarPage(
   id = "main",
@@ -161,6 +159,8 @@ tabPanel(
 # Server ----
 server <- function(input, output, session) {
 
+  database = safeReadRDS("database.Rds")
+
   observeEvent(credentials()$user_auth,{
     shinyjs::toggle("create_user",condition = isFALSE(credentials()$user_auth))
     shinyjs::toggle("forgotPassword",condition = isFALSE(credentials()$user_auth))
@@ -207,11 +207,12 @@ server <- function(input, output, session) {
 
     new = tibble(user = username, password = sodium::password_store(password1), permissions = "standard",name = name)
 
-    database = bind_rows(database,new)
-    safeSaveRDS(database,"database.Rds")
+    databaseNew = bind_rows(database,new)
+    safeSaveRDS(databaseNew,"database.Rds")
 
     showNotification(sprintf("User '%s' was created successfully!\n", new$user))
     removeModal()
+    session$reload()
 
   })
 
@@ -503,6 +504,8 @@ server <- function(input, output, session) {
       },file)
     }
   )
+
+  session$allowReconnect(TRUE)
 }
 
 
