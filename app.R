@@ -30,14 +30,14 @@ safeSaveRDS = function(object,file){
   }
 }
 
-safeReadRDS = function(file){
+safeImport = function(file, ...){
   if(file.access(file, mode = 4) == 0){
-    object = tryCatch(readRDS(file),error =  function(e) return(NULL))
+    object = tryCatch(rio::import(file, setclass = 'tibble', ...), error =  function(e) return(NULL))
   } else {
     if (Sys.info()["sysname"] == "Linux") {
       system(glue::glue("sudo chown shiny {file}"))
     }
-    object = tryCatch(readRDS(file),error =  function(e) return(NULL))
+    object = tryCatch(rio::import(file, setclass = 'tibble' ,...), error =  function(e) return(NULL))
   }
   return(object)
 }
@@ -75,25 +75,6 @@ exportAnalysis = function(analysis,inputOptions){
   return(analysis)
 }
 
-options = import(here("InputOptions.xlsx"),
-                 setclass = 'tibble',range = "A1:A1000")
-
-indx = which(options$Settings == "Input")
-
-settings = import(here("InputOptions.xlsx"),
-                  setclass = 'tibble',range = glue::glue("A2:B{indx - 1}")) %>%
-  filter(!is.na(field))
-
-inputOptions = import(here("InputOptions.xlsx"),
-                      setclass = 'tibble',skip = indx + 1)
-
-inputOptions %<>%
-  rowwise() %>%
-  mutate(values = splitVals(values,sep)) %>%
-  ungroup() %>%
-  select(-sep)
-
-lookups = rio::import(here("lookups.xlsx"))
 
 jscode = '$(document).keyup(function(e) {
     if (e.key == "Enter") {
@@ -101,15 +82,18 @@ jscode = '$(document).keyup(function(e) {
 }});
 Shiny.addCustomMessageHandler("refocus",
                                   function(NULL) {
-                                    document.getElementById("variable").focus();});'
+                                    document.getElementById("variable").focus();});
+'
+
+templateOptions = list.dirs(here("public")) %>%  basename() %>%
+  .[which(. != "public")]
 
 # ui ----
 ui <- navbarPage(
   id = "main",
 
   # Application title
-  title =  tryCatch(settings %>% filter(field == 'name') %>% pull(parameter),error = function(e)return("Data Entry")),
-
+  title = "Shiny Data Entry",
 
   theme = shinytheme("flatly"),
 
@@ -125,19 +109,31 @@ ui <- navbarPage(
 actionButton("create_user", "Create user"),
 # add login panel UI function
 shinyauthr::loginUI(id = "login"),
-uiOutput("welcomeUI")
+uiOutput("welcomeUI"),
+br(),
+br(),
+br(),
+div(id = "templates",
+    wellPanel(
+      h3("Select from existing data entry options"),
+      selectInput("chooseTemplate","Choose template",choices = templateOptions)
+    ),
+    wellPanel(
+      h3("Upload new template (coming soon)"),
+      fileInput("files","choose file(s) to import",multiple = T)
+    )
+)
   ),
 tabPanel(
   title = "Data entry",
   value = "dataEntry",
   sidebarLayout(
     sidebarPanel(
-      h2("Add data"),
+      uiOutput("header"),
       textInput('ID','ID',
                 placeholder = "catalog-number"),
-      selectizeInput("variable","variable",
-                     inputOptions$key %>%
-                       setNames(inputOptions$inputName)),
+      selectInput("variable","variable",
+                  ""),
       uiOutput('valueUI'),
       checkboxInput('check','Check if observation is uncertain'),
       fixedRow(column(2,tagAppendAttributes(
@@ -159,11 +155,17 @@ tabPanel(
 # Server ----
 server <- function(input, output, session) {
 
-  database = safeReadRDS("database.Rds")
+  database = safeImport("database.Rds")
 
   observeEvent(credentials()$user_auth,{
     shinyjs::toggle("create_user",condition = isFALSE(credentials()$user_auth))
     shinyjs::toggle("forgotPassword",condition = isFALSE(credentials()$user_auth))
+    shinyjs::toggle("templates",condition = isTRUE(credentials()$user_auth))
+  })
+
+  # disable file upload until function is ready
+  observe({
+    disable("files")
   })
 
   observeEvent(input$create_user, {
@@ -251,24 +253,71 @@ server <- function(input, output, session) {
   # reactive values ----
   rvals <- reactiveValues(ignore = c())
 
-  # load from tmp
-  observeEvent(credentials()$user_auth,{
+  # load template ----
+
+  observeEvent({
+    credentials()$user_auth
+    input$chooseTemplate}
+    ,{
+    req(credentials()$user_auth)
+    req(input$chooseTemplate)
+    fp = here("public",input$chooseTemplate,"InputOptions.xlsx")
+    if(!file.exists(fp)){
+      fp = here("public",credentials()$info$user,input$chooseTemplate,"InputOptions.xlsx")
+      if(!file.exists(fp)){
+        showNotification("Template does not exist",type = "error")
+        return(NULL)
+      }
+    }
+    options = safeImport(fp,range = "A1:A1000")
+
+    indx = which(options$Settings == "Input")
+
+    settings = safeImport(fp,range = glue::glue("A2:B{indx - 1}")) %>%
+      filter(!is.na(field))
+
+    # update application title
+    rvals$title = tryCatch(settings %>% filter(field == 'name') %>% pull(parameter),error = function(e)return("Shiny Data Entry"))
+
+    inputOptions = safeImport(fp,skip = indx + 1)
+
+    inputOptions %<>%
+      rowwise() %>%
+      mutate(values = splitVals(values,sep)) %>%
+      ungroup() %>%
+      select(-sep)
+
+    fpLook = str_replace(fp,"InputOptions.xlsx","lookups.xlsx")
+    lookups = safeImport(fpLook)
+    rvals$inputOptions = inputOptions
+    rvals$lookups = lookups
+    updateSelectInput(session = session,inputId = "variable",
+                      choices = rvals$inputOptions$key %>%
+                        setNames(rvals$inputOptions$inputName))
+  })
+
+
+  # load saved input from tmp ----
+  observeEvent({
+    credentials()$user_auth
+    input$chooseTemplate
+    },{
     req(credentials()$user_auth)
     print("loading prior values")
     if(!dir.exists(here("tmp"))) dir.create(here("tmp"))
-    rvals$dirpath = here(paste0("tmp/",credentials()$info$user))
+    rvals$dirpath = here("tmp",credentials()$info$user,input$chooseTemplate)
     if (Sys.info()["sysname"] == "Linux") {
-      system(glue::glue("sudo mkdir {rvals$dirpath}"))
+      system(glue::glue("sudo mkdir -p {rvals$dirpath}"))
       system(glue::glue("sudo chown shiny {rvals$dirpath}"))
     } else {
-      if(!dir.exists(rvals$dirpath)) dir.create(rvals$dirpath)
+      if(!dir.exists(rvals$dirpath)) dir.create(rvals$dirpath, recursive = T)
     }
     rvals$filepath = file.path(rvals$dirpath,"current.Rds")
 
     fntmp = rvals$filepath
     if(file.exists(fntmp)){
       print("prior values exist")
-      rvals$analysis = safeReadRDS(fntmp)
+      rvals$analysis = safeImport(fntmp)
     } else {
       warning("prior values do not exist")
       rvals$analysis = tibble()
@@ -292,11 +341,14 @@ server <- function(input, output, session) {
   })
 
   # Define ui inputs ----
+
+  output$header = renderUI(h2(rvals$title))
+
   output$valueUI = renderUI({
     req(credentials()$user_auth)
     req(input$variable)
     print("defining UI")
-    row = inputOptions %>%
+    row = rvals$inputOptions %>%
       dplyr::filter(key == input$variable)
     type = row %>%
       dplyr::pull(type)
@@ -306,13 +358,13 @@ server <- function(input, output, session) {
     rvals$type = type
     if(type == 'list'){
       qs =
-        inputOptions %>%
+        rvals$inputOptions %>%
         filter(key == input$variable) %>%
         pull(values) %>%
         unlist()
     } else if(type %in% c("lookup","autolookup")){
       qs = tryCatch({qstmp =
-        lookups %>%
+        rvals$lookups %>%
         filter(outputField == input$variable)
       lookupVal = rvals$analysis %>%
         filter(ID == input$ID) %>%
@@ -356,7 +408,7 @@ server <- function(input, output, session) {
   observeEvent(rvals$eval,{
     req(rvals$eval)
     if(rvals$eval){
-      f = inputOptions %>%
+      f = rvals$inputOptions %>%
         filter(key == input$variable) %>%
         pull(`function`)
       val = tryCatch(eval(parse(text = f)),error = function(e)return(""))
@@ -408,20 +460,20 @@ server <- function(input, output, session) {
     }
     # reset select input
     nextKey = tryCatch({
-      indx = which(inputOptions$key == input$variable)
-      if(inputOptions$type[indx] == "group" && input$value == "No"){
-        rvals$ignore = c(rvals$ignore,which(inputOptions$parent == inputOptions$key[indx]))
+      indx = which(rvals$inputOptions$key == input$variable)
+      if(rvals$inputOptions$type[indx] == "group" && input$value == "No"){
+        rvals$ignore = c(rvals$ignore,which(rvals$inputOptions$parent == rvals$inputOptions$key[indx]))
       }
       indx = indx + 1
       while(indx %in% rvals$ignore){
         indx = indx + 1
       }
-      inputOptions$key[indx]
+      rvals$inputOptions$key[indx]
     },error = function(e)return(""))
     updateSelectizeInput(session = session,
                          inputId =  "variable",
-                         choices = inputOptions$key %>%
-                           setNames(inputOptions$inputName),
+                         choices = rvals$inputOptions$key %>%
+                           setNames(rvals$inputOptions$inputName),
                          selected = nextKey)
 
     # refocus cursor
@@ -430,13 +482,13 @@ server <- function(input, output, session) {
 
   observeEvent(input$skip,{
     nextKey = tryCatch({
-      indx = which(inputOptions$key == input$variable)
-      inputOptions$key[indx + 1]
+      indx = which(rvals$inputOptions$key == input$variable)
+      rvals$inputOptions$key[indx + 1]
     },error = function(e)return(""))
     updateSelectizeInput(session = session,
                          inputId =  "variable",
-                         choices = inputOptions$key %>%
-                           setNames(inputOptions$inputName),
+                         choices = rvals$inputOptions$key %>%
+                           setNames(rvals$inputOptions$inputName),
                          selected = nextKey)
   })
 
@@ -471,7 +523,7 @@ server <- function(input, output, session) {
       slice(indx)
     fntmp = here(rvals$dirpath,"deleted.Rds")
     if(file.exists(fntmp)){
-      old = safeReadRDS(fntmp)
+      old = safeImport(fntmp)
     } else {
       old = tibble()
     }
@@ -500,7 +552,7 @@ server <- function(input, output, session) {
     },
     content = function(file) {
       rio::export({
-        exportAnalysis(rvals$analysis,inputOptions)
+        exportAnalysis(rvals$analysis,rvals$inputOptions)
       },file)
     }
   )
