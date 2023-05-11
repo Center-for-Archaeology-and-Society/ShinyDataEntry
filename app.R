@@ -307,8 +307,8 @@ server <- function(input, output, session) {
     if(!dir.exists(here("tmp"))) dir.create(here("tmp"))
     rvals$dirpath = here("tmp",credentials()$info$user,input$chooseTemplate)
     if (Sys.info()["sysname"] == "Linux") {
-      system(glue::glue("sudo mkdir -p {rvals$dirpath}"))
-      system(glue::glue("sudo chown shiny {rvals$dirpath}"))
+      system(glue::glue("sudo mkdir -p '{rvals$dirpath}'"))
+      system(glue::glue("sudo chown shiny '{rvals$dirpath}'"))
     } else {
       if(!dir.exists(rvals$dirpath)) dir.create(rvals$dirpath, recursive = T)
     }
