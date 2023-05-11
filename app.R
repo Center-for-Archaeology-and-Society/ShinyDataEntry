@@ -24,7 +24,7 @@ safeSaveRDS = function(object,file){
     try(saveRDS(object,file))
   } else {
     if (Sys.info()["sysname"] == "Linux") {
-      system(glue::glue("sudo chown shiny {file}"))
+      system(glue::glue("sudo chown shiny '{file}'"))
     }
     try(saveRDS(object,file))
   }
@@ -35,7 +35,7 @@ safeImport = function(file, ...){
     object = tryCatch(rio::import(file, setclass = 'tibble', ...), error =  function(e) return(NULL))
   } else {
     if (Sys.info()["sysname"] == "Linux") {
-      system(glue::glue("sudo chown shiny {file}"))
+      system(glue::glue("sudo chown shiny '{file}'"))
     }
     object = tryCatch(rio::import(file, setclass = 'tibble' ,...), error =  function(e) return(NULL))
   }
@@ -114,14 +114,16 @@ br(),
 br(),
 br(),
 div(id = "templates",
+    fluidRow(
     wellPanel(
       h3("Select from existing data entry options"),
-      selectInput("chooseTemplate","Choose template",choices = templateOptions)
-    ),
+      selectInput("chooseTemplate","Choose template",choices = templateOptions,width = "400px")
+    )),
+    fluidRow(
     wellPanel(
       h3("Upload new template (coming soon)"),
-      fileInput("files","choose file(s) to import",multiple = T)
-    )
+      fileInput("files","choose file(s) to import",multiple = T,width = "400px")
+    ))
 )
   ),
 tabPanel(
@@ -397,6 +399,9 @@ server <- function(input, output, session) {
       r = shiny::textInput('value','value')
     } else if(type == "group"){
       r = shiny::selectInput('value',paste("include",input$variable,"variables?"), choices = qs, selected = "yes")
+    } else if(type == "user"){
+      r = shiny::textInput('value','value')
+      updateTextInput(session = session,inputId = 'value', value = credentials()$info$name)
     } else {
       r = shiny::textInput('value','value',placeholder = "error determining type")
     }
