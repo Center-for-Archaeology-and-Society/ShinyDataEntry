@@ -44,6 +44,8 @@ safeImport = function(file, ...) {
   return(object)
 }
 
+key = sha256(charToRaw(Sys.getenv("key")))
+
 saveDatabase = function(database){
   safeSaveRDS(database %>%
                 dplyr::mutate_at(vars(1,3,4),~ purrr::map(.x,function(x){
